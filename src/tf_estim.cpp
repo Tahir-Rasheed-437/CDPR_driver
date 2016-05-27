@@ -26,10 +26,11 @@ int main(int argc, char **argv) {
     ros::NodeHandle nh;
     ros::AsyncSpinner spinner(1);
     spinner.start();
-    ros::Rate r(10);
+    ros::Rate r(200);
     int number_of_cables;
-
+    double ratio;//=0.00034906585039886593;
     nh.getParam("number_of_cables",number_of_cables);
+    nh.getParam("drum_radius",ratio);
     std::string frame_name="estimated_platform_frame";
     controller_class CableRobot(nh,number_of_cables,frame_name);
 
@@ -37,11 +38,11 @@ int main(int argc, char **argv) {
 
     //double ratio=9/3.1428;  // 360/Pi/Diameter ration*dl=dq
 
-    // Define a ration that transforms from dq (deg) to l (m)
+    // Define a ration that transforms from dq (rad) to l (m)
     // dq *(180/pi)*radius of drum 20mm
     //       deg2rad    radius of drum
     // dq * (pi/180) * (0.02)
-    double ratio=0.00034906585039886593;
+    //double ratio= (0.02)
 
 
     tf::TransformListener tflistener;
@@ -76,6 +77,7 @@ int main(int argc, char **argv) {
     vpMatrix W(6,8); // -inverse transpose of jacobian matrix
     vpMatrix WT(8,6); // inverse jacobian matrix
     vpMatrix J(6,8); // jacobian matrix
+    vpMatrix J_lau(8,6); // jacobian matrix
 
     vpTranslationVector w_P_p;
     vpQuaternionVector w_Quaternion_p,w_Quat_p_diff;
@@ -121,32 +123,59 @@ int main(int argc, char **argv) {
                     dq[i]=current_joint_state.position[i]-last_joint_state.position[i];
                 }
 
-                dl=dq*ratio; // converts from degrees to m
+
+
+                std::cout<<"current_joint_position =["<<std::endl;
+                for (int i = 0; i < number_of_cables; ++i) {
+                    std::cout<<current_joint_state.position[i]<<std::endl;
+                }
+                std::cout<<"]"<<std::endl;
+
+                std::cout<<"last_joint_state =["<<std::endl;
+                for (int i = 0; i < number_of_cables; ++i) {
+                    std::cout<<last_joint_state.position[i]<<std::endl;
+                }
+                std::cout<<"]"<<std::endl;
+                dq.print(std::cout,8,"dq measured= ");
+
+
+                dl=dq*ratio; // converts from rad to m
+
+                dl.print(std::cout,8,"dl measured= ");
 
                 if(dl.euclideanNorm()>tol)
                 {
-                    ROS_WARN("Norm dl is large %f. Linearization may not be valid",dl.euclideanNorm());
+                    ROS_FATAL("Norm dl is large %f. Linearization may not be valid",dl.euclideanNorm());
                 }
 
-                dl.print(std::cout,8,"dl desired= ");
+             //   dl.print(std::cout,8,"dl desired= ");
 
-                CableRobot.calculate_inv_jacobian(W);
+               // CableRobot.calculate_inv_jacobian(W);
+                CableRobot.calculate_jacobian(J_lau);
 
-                WT=W.transpose()*-1.0; // find negative transpose l_dot=Wt*dx
-                J=WT.pseudoInverse(); // find jacobian
 
-                J.print(std::cout,8,"Jacobian = ");
+           //     WT=W.transpose()*-1.0; // find negative transpose l_dot=Wt*dx
+           //     J=WT.pseudoInverse(); // find jacobian
 
-                dX=J*dl; // find velocity vx vy vz wx wy wz
+             //   WT.print(std::cout,8,"Jacobian negative transpose = ");
+                J_lau.print(std::cout,8," Laumary Jacobian = ");
 
-                dX.print(std::cout,8,"dX= ");
+               // dX=J*dl; // find velocity vx vy vz wx wy wz
+
+               // dX.print(std::cout,8,"dX measured= ");
+
+
+                dX=(J_lau.pseudoInverse())*dl; // find velocity vx vy vz wx wy wz
+
+                dX.print(std::cout,8,"dX measured= ");
 
                 dl_check=WT*dX;
                 dl_check.print(std::cout,8,"dl checking= ");
+
                 // integrate the signal
                 // CableRobot.printfM(wTp,"wTp= ");
                 CableRobot.convert_omega_to_quaternion_dot(wTp,dX[3],dX[4],dX[5],Quaternion_dot);
-                Quaternion_dot.print(std::cout,8,"Quaternion dot");
+               // Quaternion_dot.print(std::cout,8,"Quaternion dot");
                 wTp.extract(w_Quaternion_p);
                 wTp.extract(w_P_p);
                 w_Quaternion_p.buildFrom(w_Quaternion_p.x()+Quaternion_dot[1],
@@ -167,19 +196,19 @@ int main(int argc, char **argv) {
                 for (int i = 0; i < number_of_cables; ++i) {
                     dl[i]=l[i]-l_last[i];
                 }
-                dl.print(std::cout,8,"Actual dl= ");
+             //  dl.print(std::cout,8,"Actual dl= ");
                 // Need to find actual wTp
-                wdiffp=wTp_last*wTp.inverse();
+            //    wdiffp=wTp_last*wTp.inverse();
                 CableRobot.printfM(wTp,"wTp= ");
-                CableRobot.printfM(wTp_last,"wTp_last= ");
+            //    CableRobot.printfM(wTp_last,"wTp_last= ");
 
                 wdiffp.extract(w_Quat_p_diff);
-                std::cout<<"w_diff_p= "<<wdiffp[0][3]<<","<<wdiffp[1][3]<<","<<wdiffp[2][3]<<","<<w_Quat_p_diff.x()<<","<<w_Quat_p_diff.y()<<","<<w_Quat_p_diff.z()<<","<<w_Quat_p_diff.w()<<","<<std::endl;
+              //  std::cout<<"w_diff_p= "<<wdiffp[0][3]<<","<<wdiffp[1][3]<<","<<wdiffp[2][3]<<","<<w_Quat_p_diff.x()<<","<<w_Quat_p_diff.y()<<","<<w_Quat_p_diff.z()<<","<<w_Quat_p_diff.w()<<","<<std::endl;
 
                 wTp_last=wTp;
                 last_joint_state=current_joint_state; // update last position
                 l_last=l;
-                std::cout<<"=================================================="<<std::endl;
+                ROS_INFO("==================================================");
             }
 
         }

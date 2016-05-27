@@ -61,6 +61,8 @@ find_library(VISP_LIBRARIES NAMES visp HINTS ${VISP_LIBRARY_DIRS} )
    FILES
    CartesianTrajectory.msg
    CartesianTrajectoryPoint.msg
+   robot_cables_msgs.msg
+   cable_msgs.msg
 #   Message2.msg
  )
 
@@ -155,7 +157,11 @@ include_directories(
 # add_dependencies(br_driver ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 add_library(br_robot src/br_robot.cpp)
+
 add_library(controller_class src/controller_class.cpp)
+target_link_libraries(controller_class ${VISP_LIBRARIES})
+add_dependencies(controller_class br_driver_gencpp)
+
 add_library(${PROJECT_NAME} src/ros_driver.cpp include/br_driver/br_robot.h include/br_driver/controller_class.h )
 
 ## Declare a C++ executable
@@ -190,6 +196,10 @@ target_link_libraries(trajectory_controller controller_class ${catkin_LIBRARIES}
 
 add_executable(cartesian_controller src/cartesian_controller.cpp)
 target_link_libraries(cartesian_controller controller_class ${catkin_LIBRARIES} ${VISP_LIBRARIES})
+
+add_executable(rviz_visual src/rviz_visual.cpp)
+target_link_libraries(rviz_visual controller_class ${catkin_LIBRARIES} ${VISP_LIBRARIES})
+
 
 ## Add cmake target dependencies of the executable
 ## same as for the library above

@@ -2,6 +2,8 @@
 #include <stdlib.h>     /* srand, rand */
 #include "sensor_msgs/JointState.h"
 #include "geometry_msgs/TransformStamped.h"
+#include "std_msgs/Float64MultiArray.h"
+#include "br_driver/robot_cables_msgs.h"
 
 
 #include <tf/transform_broadcaster.h>
@@ -9,10 +11,19 @@
 
 #include <visp/vpHomogeneousMatrix.h>
 #include <visp/vpTranslationVector.h>
+#include <visp/vpMatrix.h>
 
 #include <thread>
 #ifndef CONTROLLER_CLASS_H
 #define CONTROLLER_CLASS_H
+
+
+// A controller class for the cable drive platform
+//
+//  This gives has a series of methods for the cable driven paralle robot
+//  such as Jacobain, IGM etc.
+//  In addition to this, the class subscribes to joint states and
+//  keeps its own version of platform location as well as subscrbing to others
 
 class controller_class
 {
@@ -25,11 +36,18 @@ private:
     int nbr;
     ros::Subscriber joint_sub,desired_transform_sub; // joint states
     sensor_msgs::JointState joint; // Declaration of message
-    bool jointStateReceived,DesiredTransformReceived;
-    vpHomogeneousMatrix wTp_,wTp_desired_;
+    bool jointStateReceived,DesiredTransformReceived,EstimatedTransformReceived;
+    vpHomogeneousMatrix wTp_,wTp_desired_,wTp_estimated_;
+    // wTp_ is where this instance of class believes the platform
+    // to be
+    // wTp_desired_ the desired location
+    // wTp_estimated_ the <<official>> or best known location of
+    // platform
     void JointSensorCallback(const sensor_msgs::JointState::ConstPtr& msg); // Callback to get value of joint Sensor
     void DesiredFrameCallback(const tf2_msgs::TFMessageConstPtr& msg);
+
     std::thread PublisherThread;
+    bool publishing_platform_;
     std::string frame_name_;
     void tfPublisher();
 
@@ -38,7 +56,8 @@ public:
     controller_class(
             ros::NodeHandle nh_,
             int number_of_cables,
-            std::string frame_name="platform"
+            std::string frame_name="platform",
+            bool publishing_platform=true
             );
 
     std::vector<vpHomogeneousMatrix> pTbi;
@@ -54,8 +73,11 @@ public:
 
     void printfM(vpHomogeneousMatrix M, const char *intro="Matrix");
 
+
+    // Kinematic functions
     void calculate_inv_jacobian(vpHomogeneousMatrix wTp,vpMatrix& W);
     void calculate_inv_jacobian(vpMatrix& W);
+    void calculate_jacobian(vpMatrix& J);
 
     std::vector<double> calculate_cable_length(vpHomogeneousMatrix wTp);
     std::vector<double> calculate_cable_length();
@@ -68,11 +90,13 @@ public:
     (vpHomogeneousMatrix wTp);
     std::vector<vpTranslationVector> calculate_normalized_cable_vectors();
 
-
     std::vector<double> calculate_motor_change(vpHomogeneousMatrix wTp_desired, double ratio);
+    // ------------------------------------
 
 
-    // Update the pose of the platform
+
+
+    // Update the pose of the platform (for this class)
     void UpdatePlatformTransformation(vpHomogeneousMatrix M);
     void UpdatePlatformTransformation(vpTranslationVector t,vpQuaternionVector Q);
     void UpdatePlatformTransformation(double x,double y,double z
@@ -87,14 +111,32 @@ public:
                                          vpColVector& quaternion_dot);
 
     void GetPlatformTransformation(vpHomogeneousMatrix& M);
+    void GetEstimatedPlatformTransformation(vpHomogeneousMatrix& M);
     void GetDesiredPlatformTransformation(vpHomogeneousMatrix& M);
+
+    void PublishPlatformLocation(bool flag);
+
+    void CartesianError(vpHomogeneousMatrix T,vpHomogeneousMatrix Td,vpColVector& Error);
+
+    void CartesianTrajectoryInterpolation(vpHomogeneousMatrix T_initial,
+                                          vpHomogeneousMatrix T_final,
+                                          ros::Duration t,
+                                          ros::Duration t_final,
+                                          vpHomogeneousMatrix& T_desired,
+                                          int Interpolator=2);
+
+    double traj_interpolator(double tf_t, int Interpolator);
+
     void GetRobotJointState(sensor_msgs::JointState& return_joint);
     void SetJointFlag(bool Flag); // Set jointrecieved flag
-    void SetDesiredTransformFlag(bool Flag); // Set jointrecieved flag
+    void SetDesiredTransformFlag(bool Flag); // Set desiredflag
+    void SetEstimatedTransformFlag(bool Flag); // Set Estimated flag
     void SetPlatformFrameName(std::string frame_name); // // Set the frame name, this
     // instance of class publishes
     bool GetJointFlag(); // Get the joint recieved flag
-    bool GetDesiredTransformFlag(); // Get the joint recieved flag
+
+    bool GetDesiredTransformFlag(); // Get the desired flag
+    bool GetEstimatedTransformFlag(); // Get the estimated platform flag
 };
 
 #endif

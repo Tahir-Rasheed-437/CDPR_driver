@@ -9,13 +9,14 @@
 
 
 
-controller_class::controller_class(ros::NodeHandle nh_, int number_of_cables,std::string frame_name)
+controller_class::controller_class(ros::NodeHandle nh_, int number_of_cables, std::string frame_name, bool publishing_platform)
     : n(nh_),
       wTbi(number_of_cables),
       wTai(number_of_cables),
       pTbi(number_of_cables),
       aiTbi(number_of_cables),
-      frame_name_(frame_name)
+      frame_name_(frame_name),
+      publishing_platform_(publishing_platform)
 {
     nbr=number_of_cables;
     wTai=get_attachment_parameters("base_attachment_points",n);
@@ -26,7 +27,12 @@ controller_class::controller_class(ros::NodeHandle nh_, int number_of_cables,std
     this->SetDesiredTransformFlag(false);
     joint_sub = n.subscribe("/joint_state", 1, &controller_class::JointSensorCallback, this);
     desired_transform_sub = n.subscribe("/tf", 1, &controller_class::DesiredFrameCallback, this);
-    PublisherThread = std::thread(&controller_class::tfPublisher, this);
+
+    if(publishing_platform_)
+    {
+        ROS_INFO("Publishing tf");
+        PublisherThread = std::thread(&controller_class::tfPublisher, this);
+    }
 }
 
 
@@ -52,7 +58,18 @@ void controller_class::DesiredFrameCallback(const tf2_msgs::TFMessageConstPtr& m
                                     msg->transforms[i].transform.rotation.w);
             wTp_desired_.buildFrom(trans,quat);
             this->SetDesiredTransformFlag(true); // Note that value has been receieved
-            break;
+        }
+        if(msg->transforms[i].child_frame_id=="estimated_platform_frame")
+        {
+            vpTranslationVector trans(msg->transforms[i].transform.translation.x,
+                                      msg->transforms[i].transform.translation.y,
+                                      msg->transforms[i].transform.translation.z);
+            vpQuaternionVector quat(msg->transforms[i].transform.rotation.x,
+                                    msg->transforms[i].transform.rotation.y,
+                                    msg->transforms[i].transform.rotation.z,
+                                    msg->transforms[i].transform.rotation.w);
+            wTp_estimated_.buildFrom(trans,quat);
+            this->SetEstimatedTransformFlag(true); // Note that value has been receieved
         }
     }
 
@@ -63,7 +80,10 @@ void controller_class::SetDesiredTransformFlag(bool Flag)
 {
     DesiredTransformReceived=Flag;
 }
-
+void controller_class::SetEstimatedTransformFlag(bool Flag)
+{
+    EstimatedTransformReceived=Flag;
+}
 
 void controller_class::SetJointFlag(bool Flag)
 {
@@ -84,6 +104,10 @@ bool controller_class::GetJointFlag()
 bool controller_class::GetDesiredTransformFlag()
 {
     return DesiredTransformReceived;
+}
+bool controller_class::GetEstimatedTransformFlag()
+{
+    return EstimatedTransformReceived;
 }
 
 void controller_class::GetRobotJointState(sensor_msgs::JointState& return_joint)
@@ -148,6 +172,10 @@ void controller_class::GetDesiredPlatformTransformation(vpHomogeneousMatrix& M)
 {
     M=wTp_desired_;
 }
+void controller_class::GetEstimatedPlatformTransformation(vpHomogeneousMatrix& M)
+{
+    M=wTp_estimated_;
+}
 
 void controller_class::UpdatePlatformTransformation(vpHomogeneousMatrix M)
 {
@@ -170,6 +198,152 @@ void controller_class::UpdatePlatformTransformation(double x,double y,double z,d
     t.buildFrom(x,y,z);
     R.buildFrom(Phi);
     wTp_.buildFrom(t,R);
+}
+
+
+
+void controller_class::CartesianError(vpHomogeneousMatrix T,vpHomogeneousMatrix Td,vpColVector& Error)
+{
+
+    assert(Error.size()==6);
+    vpTranslationVector Pd,P;
+    vpRotationMatrix Rd,R,DiffMat;
+    vpThetaUVector u;
+    Td.extract(Pd);
+    Td.extract(Rd);
+
+    T.extract(P);
+    T.extract(R);
+
+    DiffMat=Rd*R.inverse(); // Rotation difference between desired and current frames
+
+    u.buildFrom(DiffMat);
+    Error[0]=Pd[0]-P[0];
+    Error[1]=Pd[1]-P[1];
+    Error[2]=Pd[2]-P[2];
+    Error[3]=u[0];
+    Error[4]=u[1];
+    Error[5]=u[2];
+
+
+}
+
+double controller_class::traj_interpolator(double tf_t, int Interpolator)
+{
+    double rt;
+
+    if(tf_t<0.0)
+    {
+        rt=0.0;
+    }
+    else if(tf_t<1.0)
+    {
+        switch(Interpolator)
+        {
+        case 1://linear
+            rt=tf_t;
+            break;
+
+        case 2: //"cubic":
+            rt=(    3*(pow((tf_t),2)))    -(2*( pow((tf_t),3)));
+            break;
+        case 3://"quintic":
+            rt=(    10*(pow((tf_t),3)))    -(15*( pow((tf_t),4)))   + (6*(pow((tf_t),5))    );
+            break;
+
+        }
+    }
+    else
+    {
+        rt=1.0;
+    }
+    return rt;
+}
+
+/*************************************************************************************************************
+
+  Interpolate between  T_initial & T_final at time t, such that
+      T_initial corresponds to platform position at time 0
+      T_final corresponds to platform position at time t_final
+      T_desired corresponds to platform position at time t
+
+      The initial and final speed is zero
+      Interpolation is completed using polynomial
+
+
+   *************************************************************************************************************/
+
+void controller_class::CartesianTrajectoryInterpolation(vpHomogeneousMatrix T_initial,
+                                                        vpHomogeneousMatrix T_final,
+                                                        ros::Duration t,
+                                                        ros::Duration t_final,
+                                                        vpHomogeneousMatrix& T_desired,
+                                                        int Interpolator)
+{
+
+    // change Rdes to Rfinal
+    vpTranslationVector u;
+    vpMatrix uskew(3,3);
+    vpMatrix I(3,3);
+    vpMatrix A(3,3);
+    vpMatrix B(3,3);
+    vpMatrix C(3,3);
+    vpThetaUVector uAlpha;
+
+    vpRotationMatrix Rdes,Rt,Rinit,RotuAlpha,RotuAlpha_rt;
+    vpTranslationVector Pt,Pinit,Pdes;
+
+    double nu,alpha;
+    double rt,tf_t;
+
+    tf_t=(t.toSec()/(t_final.toSec()));
+    rt=traj_interpolator(tf_t,Interpolator);
+
+    if(t.toNSec()<0) ROS_ERROR("Negative time, something is very very wrong");
+
+    T_final.extract(Rdes);
+    T_final.extract(Pdes);
+    T_initial.extract(Rinit);
+    T_initial.extract(Pinit);
+
+    RotuAlpha=Rdes*Rinit.inverse(); // Takes the difference between the intial and final points of a section in oreintation
+    uAlpha.buildFrom(RotuAlpha); // u theta Representation of Orientation
+    alpha = sqrt(pow(uAlpha[0],2)+pow(uAlpha[1],2)+pow(uAlpha[2],2));
+
+    if(fabs(alpha)<0.001) // Set to identity
+    {
+        RotuAlpha_rt.eye();
+        u.set(0.0,0.0,0.0);
+    }
+    else
+    {
+        u.buildFrom(uAlpha[0]/alpha,uAlpha[1]/alpha,uAlpha[2]/alpha);
+        uskew=u.skew();
+
+        nu=rt*alpha;
+
+        I.eye(3);
+        A.eye(3,3);
+        B.eye(3,3);
+        C.eye(3,3);
+
+        for(int i=0;i<3;i++)
+        {
+            for(int j=0;j<3;j++)
+            {
+                A[i][j]=u[i]*u[j]*(1-cos(nu));
+                B[i][j]=I[i][j]*cos(nu);
+                C[i][j]=uskew[i][j]*sin(nu);
+                RotuAlpha_rt[i][j]=A[i][j]+B[i][j]+C[i][j];
+            }
+        }
+    }
+
+    Rt=RotuAlpha_rt*Rinit;
+    Pt=(Pdes-Pinit);
+    Pt=Pinit+(Pt*rt);
+    T_desired.buildFrom(Pt,Rt);
+
 }
 
 // Calculations
@@ -268,61 +442,6 @@ std::vector<vpTranslationVector> controller_class::calculate_cable_vectors(vpHom
     return L;
 }
 
-
-/*
- This function extracts the matrix necessary to transform angular velocity to quaternion dot
-
-  */
-void controller_class::convert_omega_to_quaternion_dot(vpHomogeneousMatrix wTp,vpColVector omega,vpColVector& quaternion_dot)
-{
-    vpQuaternionVector Q;
-    vpMatrix C(4,3);
-    wTp.extract(Q);
-    double Q1=Q.w();
-    double Q2=Q.x();
-    double Q3=Q.y();
-    double Q4=Q.z();
-
-
-    // Eq. 5.69 Khalil
-    C[0][0]=-Q2; C[0][1]=-Q3; C[0][2]=-Q4;
-    C[1][0]= Q1; C[1][1]= Q4; C[1][2]=-Q3;
-    C[2][0]=-Q4; C[2][1]= Q1; C[2][2]= Q2;
-    C[3][0]= Q3; C[3][1]=-Q2; C[3][2]= Q1;
-
-    C=C*0.5;
-
-    quaternion_dot=C*omega;
-
-}
-
-void controller_class::convert_omega_to_quaternion_dot(vpHomogeneousMatrix wTp,double omega_x,double omega_y,double omega_z,vpColVector& quaternion_dot)
-{
-    vpQuaternionVector Q;
-    vpMatrix C(4,3);
-    vpColVector omega(3);
-    omega[0]=omega_x;
-    omega[1]=omega_y;
-    omega[2]=omega_z;
-    wTp.extract(Q);
-    double Q1=Q.w();
-    double Q2=Q.x();
-    double Q3=Q.y();
-    double Q4=Q.z();
-
-
-    // Eq. 5.69 Khalil
-    C[0][0]=-Q2; C[0][1]=-Q3; C[0][2]=-Q4;
-    C[1][0]= Q1; C[1][1]= Q4; C[1][2]=-Q3;
-    C[2][0]=-Q4; C[2][1]= Q1; C[2][2]= Q2;
-    C[3][0]= Q3; C[3][1]=-Q2; C[3][2]= Q1;
-
-    C=C*0.5;
-
-    quaternion_dot=C*omega;
-
-}
-
 // calculate_normalized_cable_vectors() : obtain cable normalized vector in anchor frame at current
 // platform pose
 std::vector<vpTranslationVector> controller_class::calculate_normalized_cable_vectors()
@@ -380,20 +499,87 @@ std::vector<double> controller_class::calculate_motor_change(vpHomogeneousMatrix
     for (int i = 0; i < nbr; ++i) {
         current_cable_length=calculate_cable_length(); // current_cable_length
         desired_cable_length=calculate_cable_length(wTp_desired); // current_cable_length
-        q[i]=ratio*(desired_cable_length[i]-current_cable_length[i]);
+        q[i]=(desired_cable_length[i]-current_cable_length[i])/ratio;
     }
     return q;
 }
+
+
+
+/*
+  This function calculates the jacobian matrix
+  using Lamaury notation,
+  THIS JACOBIAN HAS BEEN VERIFIED USING
+  DIFFERNTIAL GEMOETRIC MODEL!
+*/
+
+
+void controller_class::calculate_jacobian(vpMatrix& J)
+{
+
+    std::vector<vpTranslationVector> L(nbr);
+    std::vector<vpTranslationVector> u(nbr);
+    vpRotationMatrix wRp;
+    vpTranslationVector pPbi;
+
+    vpTranslationVector wPai,wPbi;
+
+    for (int i = 0; i < nbr; ++i) {
+        // Platform position w.r.t world frame
+        wTbi[i]=wTp_*pTbi[i];
+        // Platform position w.r.t corresponding base
+        wTai[i].extract(wPai);
+        wTbi[i].extract(wPbi);
+        L[i]=wPbi-wPai;
+        //L[i].normalize();
+        for (int j = 0; j < L[i].size(); ++j) {
+            L[i][j]=L[i][j]/L[i].euclideanNorm();
+        }
+    }
+
+
+    wTp_.extract(wRp);
+
+
+
+    for (int i = 0; i < nbr; ++i) {
+        pTbi[i].extract(pPbi);
+        u[i] = vpTranslationVector::cross(wRp*pPbi,L[i]);
+
+        for (int j = 0; j < 6; ++j) {
+
+            // First 3 rows = normalized length
+            // Last three rows equal u vector
+            if(j<3)
+            {
+                J[i][j]=L[i][j];
+            }
+            else
+            {
+                J[i][j]=u[i][j-3];
+            }
+        }
+    }
+}
+
+
+
+
 
 /*
   Caluclates the inverse jacobian robot of the system @ current platform pose
   NOTE: This is the transpose of the inverse jacobian matrix
 
-  W=-J^{T}
+  W=J^{T}
 
   W \tau = f;
 
   */
+
+
+
+
+
 void controller_class::calculate_inv_jacobian(vpMatrix& W)
 {
 
@@ -408,7 +594,7 @@ void controller_class::calculate_inv_jacobian(vpMatrix& W)
 
     for (int i = 0; i < nbr; ++i) {
         pTbi[i].extract(pPbi);
-        u[i] = vpTranslationVector::cross(L[i], wRp*pPbi);
+        u[i] = vpTranslationVector::cross( wRp*pPbi,L[i]);
 
         for (int j = 0; j < 6; ++j) {
 
@@ -439,7 +625,7 @@ void controller_class::calculate_inv_jacobian(vpHomogeneousMatrix wTp,vpMatrix& 
 
     for (int i = 0; i < nbr; ++i) {
         pTbi[i].extract(pPbi);
-        u[i] = vpTranslationVector::cross(L[i], wRp*pPbi);
+        u[i] = vpTranslationVector::cross(wRp*pPbi,L[i]);
 
         for (int j = 0; j < 6; ++j) {
 
@@ -453,6 +639,59 @@ void controller_class::calculate_inv_jacobian(vpHomogeneousMatrix wTp,vpMatrix& 
 }
 
 
+/*
+ This function extracts the matrix necessary to transform angular velocity to quaternion dot
+
+  */
+void controller_class::convert_omega_to_quaternion_dot(vpHomogeneousMatrix wTp,vpColVector omega,vpColVector& quaternion_dot)
+{
+    vpQuaternionVector Q;
+    vpMatrix C(4,3);
+    wTp.extract(Q);
+    double Q1=Q.w();
+    double Q2=Q.x();
+    double Q3=Q.y();
+    double Q4=Q.z();
+
+
+    // Eq. 5.69 Khalil
+    C[0][0]=-Q2; C[0][1]=-Q3; C[0][2]=-Q4;
+    C[1][0]= Q1; C[1][1]= Q4; C[1][2]=-Q3;
+    C[2][0]=-Q4; C[2][1]= Q1; C[2][2]= Q2;
+    C[3][0]= Q3; C[3][1]=-Q2; C[3][2]= Q1;
+
+    C=C*0.5;
+
+    quaternion_dot=C*omega;
+
+}
+
+void controller_class::convert_omega_to_quaternion_dot(vpHomogeneousMatrix wTp,double omega_x,double omega_y,double omega_z,vpColVector& quaternion_dot)
+{
+    vpQuaternionVector Q;
+    vpMatrix C(4,3);
+    vpColVector omega(3);
+    omega[0]=omega_x;
+    omega[1]=omega_y;
+    omega[2]=omega_z;
+    wTp.extract(Q);
+    double Q1=Q.w();
+    double Q2=Q.x();
+    double Q3=Q.y();
+    double Q4=Q.z();
+
+
+    // Eq. 5.69 Khalil
+    C[0][0]=-Q2; C[0][1]=-Q3; C[0][2]=-Q4;
+    C[1][0]= Q1; C[1][1]= Q4; C[1][2]=-Q3;
+    C[2][0]=-Q4; C[2][1]= Q1; C[2][2]= Q2;
+    C[3][0]= Q3; C[3][1]=-Q2; C[3][2]= Q1;
+
+    C=C*0.5;
+
+    quaternion_dot=C*omega;
+
+}
 
 /*
 ======================================================================
@@ -465,16 +704,29 @@ Runs in a seperate thread to publish the data.
 void controller_class::tfPublisher()
 {
 
-    ros::Rate r(10);
-    geometry_msgs::TransformStamped T;
+    ros::Rate r(30);
+    geometry_msgs::TransformStamped T,Ta,Tb;
     vpQuaternionVector Q;
     vpTranslationVector t;
     static tf::TransformBroadcaster br;
+    ros::Publisher cable_pub=n.advertise< br_driver::robot_cables_msgs >("cable_state",1);
+    std::vector<vpTranslationVector> L;
+    br_driver::robot_cables_msgs L_msg;
+    L_msg.cable.resize(nbr);
+
+    for (int i = 0; i < nbr; ++i) {
+        L_msg.cable[i].cable_vector.resize(3);
+    }
+
+
+
+
     T.header.frame_id="world";
     T.child_frame_id=frame_name_;
 
     std::cout<<"frame_name_= "<<frame_name_<<std::endl;
     ros::Time t_n;
+    int Initial=1;
 
     while(ros::ok())
     {
@@ -492,7 +744,64 @@ void controller_class::tfPublisher()
         T.transform.rotation.y=Q.y();
         T.transform.rotation.z=Q.z();
         br.sendTransform(T);
+
+
+        if(!Initial) // Can send on initial iteration
+        {           // as platform is not existing
+            for (int var = 0; var < nbr; ++var) {
+                Tb.header.frame_id=frame_name_;
+                Tb.header.stamp.sec=t_n.sec;
+                Tb.header.stamp.nsec=t_n.nsec;
+                std::string child_name="platform_attachment_"+
+                        boost::lexical_cast<std::string>(var+1);
+                Tb.child_frame_id=child_name;
+                pTbi[var].extract(Q);
+                pTbi[var].extract(t);
+                Tb.transform.translation.x=t[0];
+                Tb.transform.translation.y=t[1];
+                Tb.transform.translation.z=t[2];
+                Tb.transform.rotation.w=Q.w();
+                Tb.transform.rotation.x=Q.x();
+                Tb.transform.rotation.y=Q.y();
+                Tb.transform.rotation.z=Q.z();
+                br.sendTransform(Tb);
+            }
+        }
+        else
+        {
+            Initial=0;
+        }
+
+        for (int var = 0; var < nbr; ++var) {
+            Ta.header.frame_id="world";
+            std::string child_name="base_attachment_"+
+                    boost::lexical_cast<std::string>(var+1);
+            Ta.child_frame_id=child_name;
+            Ta.header.stamp.sec=t_n.sec;
+            Ta.header.stamp.nsec=t_n.nsec;
+            wTai[var].extract(Q);
+            wTai[var].extract(t);
+            Ta.transform.translation.x=t[0];
+            Ta.transform.translation.y=t[1];
+            Ta.transform.translation.z=t[2];
+            Ta.transform.rotation.w=Q.w();
+            Ta.transform.rotation.x=Q.x();
+            Ta.transform.rotation.y=Q.y();
+            Ta.transform.rotation.z=Q.z();
+            br.sendTransform(Ta);
+        }
+
+        L=calculate_cable_vectors(wTp_);
+        for (int i = 0; i < nbr; ++i) {
+            L_msg.cable[i].cable_number=i;
+            L_msg.cable[i].cable_length=L[i].euclideanNorm();
+            for (int j = 0; j < 3; ++j) {
+                L_msg.cable[i].cable_vector[j]=L[i][j];
+            }
+        }
+        cable_pub.publish(L_msg);
         r.sleep();
         ros::spinOnce();
+
     }
 }

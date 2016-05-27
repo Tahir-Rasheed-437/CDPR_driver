@@ -19,8 +19,8 @@
 
 // This file acts as a simaultor for the cable driven robot.
 
-std::vector<double> q{-0.87,-71.98,-116.38,-80.73,90.10,131.21,-54.0,10.131};
-std::vector<double> q_new{-0.87,-71.98,-116.38,-80.73,90.10,131.21,-54.0,10.131};
+std::vector<double> q{0.00,0.0,0.0,0.0,0.0,0.0,0.0,0.0};
+std::vector<double> q_new{0.00,0.0,0.0,0.0,0.0,0.0,0.0,0.0};
 std::vector<double> dq{0.001,0.001,0.003,-0.001,0.005,0.001,0.0012,-0.0045};
 std::vector<double> tau{0.00,0.0,0.0,0.0,0.0,0.0,0.0,0.0};
 

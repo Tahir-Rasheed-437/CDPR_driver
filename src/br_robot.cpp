@@ -21,10 +21,11 @@
 //      3. publish the receved data to defined topics
 // Note as a test I can run it with python
 
+
 BRrobot::BRrobot(ros::NodeHandle nh_, std::string host, int reverse_port) : nh(nh_) ,REVERSE_PORT_(reverse_port)
 {
     kill_signal=false;
-    debug_=1;
+    debug_=0;
     struct sockaddr_in serv_addr; // a structure containing the socket information
     socklen_t clilen;
     int n, flag;
@@ -147,6 +148,8 @@ void BRrobot::readData() // function to start commuinication
     FD_ZERO(&readfds); // Clears all entries from the set
     FD_SET(new_sockfd_, &readfds); // Adds new_sockfd_ to the set
 
+
+
     while(keepalive_ && ros::ok())
     {
 
@@ -185,6 +188,8 @@ void BRrobot::unpack_message(std::string p)
     const char* pTest =doc.Parse(p.c_str(), 0, TIXML_ENCODING_UTF8);
     bool bool_value;
     float float_value;
+
+    const double pi = 3.1415926535897; // B&R use degs, everyone else doesn't ;)
 
     TiXmlElement* PLC_ROS=doc.FirstChildElement("PLC_ROS");
 
@@ -230,14 +235,14 @@ void BRrobot::unpack_message(std::string p)
                        // std::cout<<"Getting position"<<std::endl;
                         check_attribute(Position_i->
                                         QueryFloatAttribute("V",&float_value));
-                        robot_state.position[i]=float_value;
+                        robot_state.position[i]=float_value*pi/180.0;
 
                     }
                     if(Velocity_i)
                     {
                         check_attribute(Velocity_i->
                                         QueryFloatAttribute("V",&float_value));
-                        robot_state.velocity[i]=float_value;
+                        robot_state.velocity[i]=float_value*pi/180.0;
                     }
                     if(Torque_i)
                     {
@@ -335,34 +340,79 @@ std::string BRrobot::pack_joint_message()
     double q[8]; // converted deviation joint position
     double tau[8]; // converted torque
     std::string message=" ";
+    const double pi = 3.1415926535897; // B&R use degs, everyone else doesn't ;)
 
-
-    if(desired_joint_position.position.size()==robot_state.position.size())
+    if(desired_joint_position.position.size()==robot_state.position.size() || desired_joint_position.effort.size()==robot_state.position.size())
     {
-        //ROS_INFO_COND(debug_,"joint name check");
+        ROS_INFO_COND(debug_,"joint name check");
 
         if(desired_joint_position.name!=robot_state.name)
         {
-          //  ROS_INFO_COND(debug_,"In if loop");
+            ROS_INFO_COND(debug_,"In if loop");
             // Assign Joints according to index
             for (int i = 0; i < 8; ++i) {
                 for (int j = 0; j < 8; ++j) {
                     if(robot_state.name[i]==desired_joint_position.name[j])
                     {
-                        q[i]=desired_joint_position.position[j];
-                        tau[i]=desired_joint_position.effort[j];
-                    }
+
+                        if(desired_joint_position.position.empty())
+                        {
+                            ROS_WARN_COND(debug_,"No desired joint position given,defaulting 0");
+                            q[i]=0.0;
+                        }
+                        else
+                        {
+                            q[i]=desired_joint_position.position[j]*180/pi;
+                        }
+
+                        if(desired_joint_position.effort.empty())
+                        {
+                            ROS_WARN_COND(debug_,"No desired joint torque given,defaulting 0");
+                            tau[i]=0.0;
+                        }
+                        else
+                        {
+                            tau[i]=desired_joint_position.effort[j];
+                        }
+
+
+
+
+                     }
                 }
             }
         }
         else // Assign Joints in simple manner
         {
             for (int var = 0; var < 8; ++var) {
-                q[var]=desired_joint_position.position[var];
-                tau[var]=desired_joint_position.effort[var];
+
+                if(desired_joint_position.position.empty())
+                {
+                    ROS_WARN_COND(debug_,"No desired joint position given,defaulting 0");
+                    q[var]=0.0;
+                }
+                else
+                {
+                    q[var]=desired_joint_position.position[var]*180/pi;
+                }
+
+
+
+                if(desired_joint_position.effort.empty())
+                {
+                    ROS_WARN_COND(debug_,"No desired joint torque given,defaulting 0");
+                    tau[var]=0.0;
+                }
+                else
+                {
+                    tau[var]=desired_joint_position.effort[var];
+                }
+
+
+
             }
         }
-      //  ROS_INFO_COND(debug_,"Creating Document");
+        ROS_INFO_COND(debug_,"Creating Document");
         float floatvalue;
         TiXmlDocument doc;
         TiXmlElement* ROS_PLC=new TiXmlElement("ROS_PLC");
@@ -388,13 +438,14 @@ std::string BRrobot::pack_joint_message()
 
 
         TiXmlPrinter printer;
-        //doc.Print();
+        doc.Print();
         doc.Accept( &printer );
         message = printer.CStr();
         //std::cout<<"message "<<message<<std::endl;
     }
     else
     {
+        ROS_WARN_COND(debug_,"Desired joint position size incorrect");
         message="\0";
     }
     return message;

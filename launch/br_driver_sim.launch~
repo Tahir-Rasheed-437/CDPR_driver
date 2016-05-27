@@ -15,6 +15,8 @@
     <param name="number_of_cables" type="int" value="$(arg cables)"/>
     <param name="drum_radius" type="double" value="$(arg motor_ratio)"/>
 
+
+
 <!--  <node name="robot_state_publisher" pkg="robot_state_publisher" type="state_publisher" /> -->
 
   <!-- driver -->
@@ -28,10 +30,16 @@
 
 
 	<rosparam command="load" file="$(find br_driver)/config/robot_parameters.yaml" />
-<!--  <node name="robot_state_publisher" pkg="robot_state_publisher" type="state_publisher" /> -->
 
-  <!-- driver -->
-  <node name="ros_driver" pkg="br_driver" type="ros_driver" output="screen" >
+
+  <node
+name="robot_simulator" pkg="br_driver" type="robot_simulator" respawn="true" args="127.0.0.1 50001" output="screen">
+</node>
+
+  <node
+name="tf_with_joint_gui" pkg="br_driver" type="tf_with_joint_gui.py" respawn="false">
+</node>
+
 
 
 </launch>

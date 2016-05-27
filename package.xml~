@@ -60,7 +60,6 @@
   <run_depend>sensor_msgs</run_depend>
   <run_depend>geometry_msgs</run_depend>
   <run_depend>trajectory_msgs</run_depend>
-  <run_depend>trajectory_msgs</run_depend>
   <run_depend>tinyxml</run_depend>
   <run_depend>tf</run_depend>
 

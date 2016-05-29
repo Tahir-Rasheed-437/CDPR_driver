@@ -36,10 +36,10 @@
 name="robot_simulator" pkg="br_driver" type="robot_simulator" respawn="true" args="127.0.0.1 50001" output="screen">
 </node>
 
+
+</launch>
+<!--
   <node
 name="tf_with_joint_gui" pkg="br_driver" type="tf_with_joint_gui.py" respawn="false">
 </node>
-
-
-
-</launch>
+-->

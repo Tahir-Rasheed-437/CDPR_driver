@@ -1,3 +1,6 @@
+This package requires VISP
+
+
 Can I move the robot simply with goto position
 
 I can move the motors in position the problem was too high a gain in B&R. 

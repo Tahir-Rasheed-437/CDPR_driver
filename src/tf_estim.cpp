@@ -26,7 +26,7 @@ int main(int argc, char **argv) {
     ros::NodeHandle nh;
     ros::AsyncSpinner spinner(1);
     spinner.start();
-    ros::Rate r(200);
+    ros::Rate r(100);
     int number_of_cables;
     double ratio;//=0.00034906585039886593;
     nh.getParam("number_of_cables",number_of_cables);
@@ -91,7 +91,7 @@ int main(int argc, char **argv) {
     bool InitialStep=true;
     double tol=0.01; // tolerance is in metres
 
-
+bool debug=true;
     while(ros::ok())
     {
 
@@ -113,10 +113,13 @@ int main(int argc, char **argv) {
             }
             else
             {
-
+                ROS_INFO_COND(debug,"Updating platform");
                 CableRobot.UpdatePlatformTransformation(wTp);
+                ROS_INFO_COND(debug,"Calculate cable length");
                 l=CableRobot.calculate_cable_length();
+                ROS_INFO_COND(debug,"Calculate joint state SOMETHING WRONG HERE");
                 CableRobot.GetRobotJointState(current_joint_state);
+                ROS_INFO_COND(debug,"Joint Change");
 
                 // Obtain how much the joint has changed
                 for (int i = 0; i < number_of_cables; ++i) {
@@ -136,12 +139,12 @@ int main(int argc, char **argv) {
                     std::cout<<last_joint_state.position[i]<<std::endl;
                 }
                 std::cout<<"]"<<std::endl;
-                dq.print(std::cout,8,"dq measured= ");
+                //dq.print(std::cout,8,"dq measured= ");
 
 
                 dl=dq*ratio; // converts from rad to m
 
-                dl.print(std::cout,8,"dl measured= ");
+                //dl.print(std::cout,8,"dl measured= ");
 
                 if(dl.euclideanNorm()>tol)
                 {
@@ -158,7 +161,7 @@ int main(int argc, char **argv) {
            //     J=WT.pseudoInverse(); // find jacobian
 
              //   WT.print(std::cout,8,"Jacobian negative transpose = ");
-                J_lau.print(std::cout,8," Laumary Jacobian = ");
+                //J_lau.print(std::cout,8," Laumary Jacobian = ");
 
                // dX=J*dl; // find velocity vx vy vz wx wy wz
 
@@ -167,10 +170,10 @@ int main(int argc, char **argv) {
 
                 dX=(J_lau.pseudoInverse())*dl; // find velocity vx vy vz wx wy wz
 
-                dX.print(std::cout,8,"dX measured= ");
+               // dX.print(std::cout,8,"dX measured= ");
 
                 dl_check=WT*dX;
-                dl_check.print(std::cout,8,"dl checking= ");
+             //   dl_check.print(std::cout,8,"dl checking= ");
 
                 // integrate the signal
                 // CableRobot.printfM(wTp,"wTp= ");

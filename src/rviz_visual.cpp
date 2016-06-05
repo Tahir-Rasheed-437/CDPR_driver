@@ -17,7 +17,59 @@
 
 // Function to load attachment points
 
+void create_platform(vpHomogeneousMatrix bTcentroid,
+                     std::string marker_namespace,
+                     int marker_id,
+                     u_int32_t shapeij,
+                     visualization_msgs::Marker& marker,
+                     double x_scale=0.05,
+                     double y_scale=0.05,
+                     double z_scale=0.05,
+                     float r=0.3f,
+                     float g=0.3f,
+                     float b=0.3f,
+                     float alpha=1.0,
+                     std::string frame_id="world")
+{
 
+    vpTranslationVector P;
+    vpQuaternionVector Q;
+    bTcentroid.extract(P);
+    bTcentroid.extract(Q);
+    marker.header.stamp = ros::Time::now();
+
+    marker.pose.position.x = P[0];
+    marker.pose.position.y = P[1];
+    marker.pose.position.z = P[2];
+
+    marker.pose.orientation.x = Q.x();
+    marker.pose.orientation.y = Q.y();
+    marker.pose.orientation.z = Q.z();
+    marker.pose.orientation.w = Q.w();
+
+    marker.header.frame_id=frame_id;
+    marker.header.stamp=ros::Time::now();
+    marker.ns=marker_namespace;
+    marker.id=marker_id;
+
+    marker.type = shapeij;
+    marker.action=visualization_msgs::Marker::ADD;
+
+
+    // Set the scale of the marker -- 1x1x1 here means 1m on a side
+    marker.scale.x = x_scale;
+    marker.scale.y = y_scale;
+    marker.scale.z = z_scale;
+
+    // Set the color -- be sure to set alpha to something non-zero!
+    marker.color.r = r;
+    marker.color.g = g;
+    marker.color.b = b;
+    marker.color.a = alpha;
+
+    marker.lifetime = ros::Duration();
+
+}
 
 void create_link(vpTranslationVector p1,
                  vpTranslationVector p2,
@@ -124,61 +176,6 @@ void create_link(vpTranslationVector p1,
     marker.lifetime = ros::Duration();
 }
 
-void create_line(std::vector<vpTranslationVector> Pa,
-                 std::string marker_namespace,
-                 int marker_id,
-                 visualization_msgs::Marker& marker,
-                 std::string frame_id="world",
-                 double x_scale=0.1,
-                 double y_scale=0.1,
-                 float r=0.2f,
-                 float g=0.2f,
-                 float b=0.2f,
-                 float alpha=1.0,
-                 double tol=0.0001 //tolerance in float cals
-        )
-{
-
-
-    u_int32_t line_strip=visualization_msgs::Marker::LINE_STRIP;
-    vpTranslationVector wPij,wPij_norm,n1,n2;
-    vpRotationMatrix wRij;
-    vpQuaternionVector Qij;
-
-
-    // Set the frame ID and timestamp.  See the TF tutorials for information on these.
-    marker.header.frame_id = "/my_frame";
-    marker.header.stamp = ros::Time::now();
-
-    // Set the namespace and id for this marker.  This serves to create a unique ID
-    // Any marker sent with the same namespace and id will overwrite the old one
-    marker.ns = "basic_shapes";
-    marker.id = 0;
-
-    marker.header.frame_id=frame_id;
-    marker.header.stamp=ros::Time::now();
-    marker.ns=marker_namespace;
-    marker.id=marker_id;
-
-    marker.type =line_strip;
-    marker.action=visualization_msgs::Marker::ADD;
-
-    for (int i = 0; i < 8; ++i) {
-        geometry_msgs::Point p;
-        p.x=Pa[i][0];
-        p.y=Pa[i][1];
-        p.z=Pa[i][2];
-        marker.points.push_back(p);
-    }
-    // Line strip is blue
-    marker.color.b = 1.0;
-    marker.color.a = 1.0;
-    // Position marker halfway along
-    //
-    marker.scale.x=0.3;
-
-    marker.lifetime = ros::Duration();
-}
 
 
 int main(int argc, char **argv) {
@@ -197,14 +194,10 @@ int main(int argc, char **argv) {
 
     controller_class CableRobot(nh,number_of_cables,"~",false); // initialise class without publisher
 
-
-
-
-
-    vpHomogeneousMatrix wTp_estimate,wTbi;
+    vpHomogeneousMatrix wTp_estimate,pTcentroid,wTcentroid,wTbi;
     std::vector<vpTranslationVector> wPai(number_of_cables),wPbi(number_of_cables);
     visualization_msgs::Marker marker12,marker34,marker56,marker70;
-    std::vector<visualization_msgs::Marker> marker_plat(12);
+    visualization_msgs::Marker marker_plat;
     for (int var = 0; var < number_of_cables; ++var) {
         CableRobot.wTai[var].extract(wPai[var]);
     }
@@ -245,15 +238,62 @@ int main(int argc, char **argv) {
     ros::spinOnce();
     ROS_INFO("finsihed publishing");
 
+
+    pTcentroid.buildFrom(0.164,0.164,0.068,0.0,0.0,0.0);
+
+    visualization_msgs::Marker line_list;
+    line_list.type = visualization_msgs::Marker::LINE_LIST;
+    line_list.scale.x = 0.01;
+    line_list.color.b = 1.0;
+    line_list.color.a = 1.0;
+    line_list.header.frame_id="myframe";
+    line_list.header.stamp = ros::Time::now();
+    line_list.ns="cables";
+    line_list.pose.orientation.w =1;
+    line_list.id = 2;
+    line_list.lifetime = ros::Duration();
+
+
+
+    geometry_msgs::Point p;
     while(ros::ok())
     {
+        CableRobot.GetEstimatedPlatformTransformation(wTp_estimate);
+        wTcentroid=wTp_estimate*pTcentroid;
 
-        CableRobot.GetEstimatedPlatformTransformation(wTp_estimate); // Get Estimated Location
-        // Create bars between 23,45,67,81
         for (int var = 0; var < number_of_cables; ++var) {
             wTbi=wTp_estimate*CableRobot.pTbi[var];
             wTbi.extract(wPbi[var]);
+            p.x=wPai[var][0];
+            p.y=wPai[var][1];
+            p.z=wPai[var][2];
+            line_list.points.push_back(p);
+            p.x=wPbi[var][0];
+            p.y=wPbi[var][1];
+            p.z=wPbi[var][2];
+            line_list.points.push_back(p);
         }
+        create_platform(wTcentroid,"platform",0,visualization_msgs::Marker::CUBE,
+                             marker_plat,0.306,0.354,0.138,0.3f,0.3f,0.3f,1.0,"world");
+
+
+
+        marker_pub.publish(marker_plat);
+        r.sleep();
+        ros::spinOnce();
+        marker_pub.publish(line_list);
+        r.sleep();
+        r.sleep();
+        ros::spinOnce();
+
+    }
+    CableRobot.Stop();
+    return 0;
+}
+
+
+/*
+ *         }
         int i=0;
         create_link(wPbi[0],wPbi[2],"Platform_Structure",1,marker_plat[i]);
         i++;
@@ -279,17 +319,4 @@ int main(int argc, char **argv) {
         i++;
         create_link(wPbi[7],wPbi[2],"Platform_Structure",12,marker_plat[i]);
         i++;
-        ROS_INFO("Here");
-
-        for (int j = 0; j < 12; ++j) {
-            marker_pub.publish(marker_plat[j]);
-            r.sleep();
-            ros::spinOnce();
-        }
-
-
-    }
-    return 0;
-}
-
-
+        ROS_INFO("Here");*/

@@ -36,6 +36,7 @@ controller_class::controller_class(ros::NodeHandle nh_, int number_of_cables, st
 }
 
 
+
 void controller_class::JointSensorCallback(const sensor_msgs::JointState::ConstPtr& msg)
 {
     joint=*msg; // joint is eqaul to the value pointed to by msg
@@ -112,10 +113,24 @@ bool controller_class::GetEstimatedTransformFlag()
 
 void controller_class::GetRobotJointState(sensor_msgs::JointState& return_joint)
 {
-    return_joint=joint;
+
+    return_joint.position.clear();
+    return_joint.position.resize(joint.position.size());
+    return_joint.position=joint.position;
+
+    return_joint.velocity.clear();
+    return_joint.velocity.resize(joint.velocity.size());
+    return_joint.velocity=joint.velocity;
+
+    return_joint.effort.clear();
+    return_joint.effort.resize(joint.effort.size());
+    return_joint.effort=joint.effort;
+
 }
 
-
+void controller_class::Stop(){
+    PublisherThread.join();
+}
 
 
 std::vector<vpHomogeneousMatrix> controller_class::get_attachment_parameters(
@@ -153,6 +168,23 @@ void controller_class::get_initial_location(std::string param_name,ros::NodeHand
     R.buildFrom(Phi);
     wTp_.buildFrom(t,R);
 }
+
+// Function for Tahir tests, gets the trajectory parameter from the parameter server
+// The parameters are simply vectors
+std::vector<double> controller_class::get_trajectory_parameter(std::string param_name)
+{
+    XmlRpc::XmlRpcValue Axml;
+    ros::param::get(param_name,Axml);
+
+    std::vector<double> p(Axml.size());
+
+    for (int i = 0; i < Axml.size(); ++i) {
+        double element=Axml[i];
+        p[i]=(element);
+    }
+    return p;
+}
+
 
 
 void controller_class::printfM(vpHomogeneousMatrix M,const char* intro)

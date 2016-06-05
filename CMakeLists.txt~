@@ -198,7 +198,7 @@ add_executable(cartesian_controller src/cartesian_controller.cpp)
 target_link_libraries(cartesian_controller controller_class ${catkin_LIBRARIES} ${VISP_LIBRARIES})
 
 add_executable(tahir_torque_ctrl src/tahir_torque_ctrl.cpp)
-target_link_libraries(tahir_torque_ctrl controller_class ${catkin_LIBRARIES} ${VISP_LIBRARIES})
+target_link_libraries(cartesian_controller controller_class ${catkin_LIBRARIES} ${VISP_LIBRARIES})
 
 
 add_executable(rviz_visual src/rviz_visual.cpp)

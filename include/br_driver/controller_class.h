@@ -35,7 +35,7 @@ private:
     void get_initial_location(std::string param_name,ros::NodeHandle n);
     int nbr;
     ros::Subscriber joint_sub,desired_transform_sub; // joint states
-    sensor_msgs::JointState joint; // Declaration of message
+    sensor_msgs::JointState joint_; // Declaration of message
     bool jointStateReceived,DesiredTransformReceived,EstimatedTransformReceived;
     vpHomogeneousMatrix wTp_,wTp_desired_,wTp_estimated_;
     // wTp_ is where this instance of class believes the platform
@@ -59,7 +59,7 @@ public:
             std::string frame_name="platform",
             bool publishing_platform=true
             );
-
+    sensor_msgs::JointState joint; // Public message
     std::vector<vpHomogeneousMatrix> pTbi;
     // Transform of attachment points w.r.t world frame
     std::vector<vpHomogeneousMatrix> wTbi;
@@ -69,7 +69,7 @@ public:
     std::vector<vpHomogeneousMatrix> aiTbi;
     // Current Platform Location in world frame
 
-
+    std::vector<double> get_trajectory_parameter(std::string param_name);
 
     void printfM(vpHomogeneousMatrix M, const char *intro="Matrix");
 
@@ -95,7 +95,7 @@ public:
 
 
 
-
+    void Stop();
     // Update the pose of the platform (for this class)
     void UpdatePlatformTransformation(vpHomogeneousMatrix M);
     void UpdatePlatformTransformation(vpTranslationVector t,vpQuaternionVector Q);

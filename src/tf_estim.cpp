@@ -91,10 +91,11 @@ int main(int argc, char **argv) {
     bool InitialStep=true;
     double tol=0.01; // tolerance is in metres
 
-bool debug=true;
+    bool debug=true;
     while(ros::ok())
     {
 
+        ROS_INFO_COND(debug,"Initializing");
         if(CableRobot.GetJointFlag())
         {
 
@@ -118,8 +119,28 @@ bool debug=true;
                 ROS_INFO_COND(debug,"Calculate cable length");
                 l=CableRobot.calculate_cable_length();
                 ROS_INFO_COND(debug,"Calculate joint state SOMETHING WRONG HERE");
-                CableRobot.GetRobotJointState(current_joint_state);
-                ROS_INFO_COND(debug,"Joint Change");
+
+                try {
+                    CableRobot.GetRobotJointState(current_joint_state);
+                }
+                catch (const std::bad_alloc&) {
+                    ROS_ERROR("std::bad_alloc");
+                    std::cout<<"size="<<CableRobot.joint.position.size()<<"joint =["<<std::endl;
+                    for (int i = 0; i < number_of_cables; ++i) {
+                        std::cout<<CableRobot.joint.position[i]<<std::endl;
+                        std::cout<<CableRobot.joint.name[i]<<std::endl;
+                    }
+                    std::cout<<"size="<<current_joint_state.position.size()<<"current_joint_position =["<<std::endl;
+
+
+                    for (int i = 0; i < number_of_cables; ++i) {
+                        std::cout<<current_joint_state.position[i]<<std::endl;
+                    }
+                    CableRobot.Stop();
+                    return -1;
+                }
+
+
 
                 // Obtain how much the joint has changed
                 for (int i = 0; i < number_of_cables; ++i) {
@@ -127,58 +148,16 @@ bool debug=true;
                 }
 
 
-
-                std::cout<<"current_joint_position =["<<std::endl;
-                for (int i = 0; i < number_of_cables; ++i) {
-                    std::cout<<current_joint_state.position[i]<<std::endl;
-                }
-                std::cout<<"]"<<std::endl;
-
-                std::cout<<"last_joint_state =["<<std::endl;
-                for (int i = 0; i < number_of_cables; ++i) {
-                    std::cout<<last_joint_state.position[i]<<std::endl;
-                }
-                std::cout<<"]"<<std::endl;
-                //dq.print(std::cout,8,"dq measured= ");
-
-
                 dl=dq*ratio; // converts from rad to m
 
-                //dl.print(std::cout,8,"dl measured= ");
+                if(dl.euclideanNorm()>tol) ROS_FATAL("Norm dl is large %f. Linearization may not be valid",dl.euclideanNorm());
 
-                if(dl.euclideanNorm()>tol)
-                {
-                    ROS_FATAL("Norm dl is large %f. Linearization may not be valid",dl.euclideanNorm());
-                }
-
-             //   dl.print(std::cout,8,"dl desired= ");
-
-               // CableRobot.calculate_inv_jacobian(W);
                 CableRobot.calculate_jacobian(J_lau);
-
-
-           //     WT=W.transpose()*-1.0; // find negative transpose l_dot=Wt*dx
-           //     J=WT.pseudoInverse(); // find jacobian
-
-             //   WT.print(std::cout,8,"Jacobian negative transpose = ");
-                //J_lau.print(std::cout,8," Laumary Jacobian = ");
-
-               // dX=J*dl; // find velocity vx vy vz wx wy wz
-
-               // dX.print(std::cout,8,"dX measured= ");
-
 
                 dX=(J_lau.pseudoInverse())*dl; // find velocity vx vy vz wx wy wz
 
-               // dX.print(std::cout,8,"dX measured= ");
-
-                dl_check=WT*dX;
-             //   dl_check.print(std::cout,8,"dl checking= ");
-
-                // integrate the signal
-                // CableRobot.printfM(wTp,"wTp= ");
                 CableRobot.convert_omega_to_quaternion_dot(wTp,dX[3],dX[4],dX[5],Quaternion_dot);
-               // Quaternion_dot.print(std::cout,8,"Quaternion dot");
+
                 wTp.extract(w_Quaternion_p);
                 wTp.extract(w_P_p);
                 w_Quaternion_p.buildFrom(w_Quaternion_p.x()+Quaternion_dot[1],
@@ -194,19 +173,7 @@ bool debug=true;
                 wTp.buildFrom(w_P_p,w_Quaternion_p);
                 CableRobot.UpdatePlatformTransformation(wTp);
 
-                // find cable lengthsat new position
-                //l=CableRobot.calculate_cable_length();
-                for (int i = 0; i < number_of_cables; ++i) {
-                    dl[i]=l[i]-l_last[i];
-                }
-             //  dl.print(std::cout,8,"Actual dl= ");
-                // Need to find actual wTp
-            //    wdiffp=wTp_last*wTp.inverse();
                 CableRobot.printfM(wTp,"wTp= ");
-            //    CableRobot.printfM(wTp_last,"wTp_last= ");
-
-                wdiffp.extract(w_Quat_p_diff);
-              //  std::cout<<"w_diff_p= "<<wdiffp[0][3]<<","<<wdiffp[1][3]<<","<<wdiffp[2][3]<<","<<w_Quat_p_diff.x()<<","<<w_Quat_p_diff.y()<<","<<w_Quat_p_diff.z()<<","<<w_Quat_p_diff.w()<<","<<std::endl;
 
                 wTp_last=wTp;
                 last_joint_state=current_joint_state; // update last position
@@ -220,6 +187,7 @@ bool debug=true;
         r.sleep();
 
     }
+    CableRobot.Stop();
     return 0;
 }
 

@@ -185,7 +185,7 @@ int main(int argc, char **argv) {
 
     ros::AsyncSpinner spinner(1);
     spinner.start();
-    ros::Rate r(1);
+    ros::Rate r(10);
     int number_of_cables;
 
     double ratio;
@@ -246,7 +246,7 @@ int main(int argc, char **argv) {
     line_list.scale.x = 0.01;
     line_list.color.b = 1.0;
     line_list.color.a = 1.0;
-    line_list.header.frame_id="myframe";
+    line_list.header.frame_id="world";
     line_list.header.stamp = ros::Time::now();
     line_list.ns="cables";
     line_list.pose.orientation.w =1;

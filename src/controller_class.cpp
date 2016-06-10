@@ -177,8 +177,8 @@ std::vector<double> controller_class::get_trajectory_parameter(std::string param
     ros::param::get(param_name,Axml);
 
     std::vector<double> p(Axml.size());
-
     for (int i = 0; i < Axml.size(); ++i) {
+
         double element=Axml[i];
         p[i]=(element);
     }

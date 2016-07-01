@@ -25,6 +25,6 @@
 
 
 	<rosparam command="load" file="$(find br_driver)/config/robot_parameters.yaml" />
-
+<rosparam command="load" file="$(find br_driver)/traj/Exp_2.yaml" />
 
 </launch>

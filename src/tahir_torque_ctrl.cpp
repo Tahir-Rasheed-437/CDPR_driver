@@ -26,7 +26,7 @@ int main(int argc, char **argv) {
     ros::NodeHandle nh;
     ros::AsyncSpinner spinner(1);
     spinner.start();
-    ros::Rate r(1);
+    ros::Rate r(50);
     int number_of_cables;
 
     double ratio;
@@ -53,13 +53,13 @@ int main(int argc, char **argv) {
     desired_joint_position.effort.resize(number_of_cables,0);
 
 
-//    while(!CableRobot.GetJointFlag())
-//    {
-//        CableRobot.GetRobotJointState(desired_joint_position);
-//        ROS_INFO("Got_flag");
-//        ros::spinOnce();
-//        r.sleep();
-//    }
+    //    while(!CableRobot.GetJointFlag())
+    //    {
+    //        CableRobot.GetRobotJointState(desired_joint_position);
+    //        ROS_INFO("Got_flag");
+    //        ros::spinOnce();
+    //        r.sleep();
+    //    }
 
 
 
@@ -67,33 +67,58 @@ int main(int argc, char **argv) {
     std::vector<double> tau2;
     std::vector<double> tau3;
     std::vector<double> tau4;
+    std::vector<double> tau;
+    std::vector<double> p_x;
+    std::vector<double> p_y;
+    std::vector<double> p_z;
     std::vector<double> traj_time;
-    tau1=CableRobot.get_trajectory_parameter("tension1");
-    tau2=CableRobot.get_trajectory_parameter("tension2");
-    tau3=CableRobot.get_trajectory_parameter("tension3");
-    tau4=CableRobot.get_trajectory_parameter("tension4");
-    traj_time=CableRobot.get_trajectory_parameter("traj_time");
+    //std::vector<double> Current;
+
+    tau1=CableRobot.get_trajectory_parameter("tension1");ROS_INFO("1");
+    tau2=CableRobot.get_trajectory_parameter("tension2");ROS_INFO("1");
+    tau3=CableRobot.get_trajectory_parameter("tension3");ROS_INFO("1");
+    tau4=CableRobot.get_trajectory_parameter("tension4");ROS_INFO("1");
+    p_x=CableRobot.get_trajectory_parameter("position_x");ROS_INFO("1");
+    p_y=CableRobot.get_trajectory_parameter("position_y");ROS_INFO("1");
+    p_z=CableRobot.get_trajectory_parameter("position_z");ROS_INFO("1");
+    traj_time=CableRobot.get_trajectory_parameter("timeee");ROS_INFO("1");
 
 
     std::cout<<desired_joint_position.position.size()<<desired_joint_position.effort.size()<<std::endl;
-    int i=0;
 
-    ros::Time Start;
+
+    ros::Time Start= ros::Time::now();
+    ros::Duration Current;
+    double torque;
+    ros::Duration(2.0).sleep();
     while(ros::ok())
     {
-            ROS_INFO("Tau=[ %f, %f,%f,%f], Time=%f",tau1[i],tau2[i],tau3[i],tau4[i],traj_time[i]);
+        //ROS_INFO("Tau=[ %f, %f,%f,%f], Time=%f, Position=[ %f, %f,%f]",tau1[i],tau2[i],tau3[i],tau4[i],traj_time[i],p_x[i],p_y[i],p_z[i]);
 
-            desired_joint_position.position[0]=0.5;
-            desired_joint_position.effort[0]=tau1[i];
-            desired_joint_position.effort[1]=tau2[i];
-            desired_joint_position.effort[2]=tau3[i];
-            desired_joint_position.effort[3]=tau4[i];
+        Current=(ros::Time::now())-Start;
+
+        torque=0.0;
+
+        for (int time_point = 0; time_point < traj_time.size(); ++time_point)
+        {
+            ROS_INFO("Current time=%f  traj_time[i]=%f",Current.toSec(),traj_time[time_point]);
+            if (Current.toSec()<traj_time[time_point])
+            {
+                torque=tau1[time_point-1];
+                break;
+            }
+        }
+          desired_joint_position.header.stamp=ros::Time::now();
+          desired_joint_position.position[0]=0.5;
+          desired_joint_position.effort[0]=-0.002*2*torque;
+//        desired_joint_position.effort[1]=tau2[i];
+//        desired_joint_position.effort[2]=tau3[i];
+//        desired_joint_position.effort[3]=tau4[i];
 
 
-            joint_deviation_publisher.publish(desired_joint_position);
-            i++;
-            ros::spinOnce();
-            r.sleep();
+        joint_deviation_publisher.publish(desired_joint_position);
+        ros::spinOnce();
+        r.sleep();
     }
     return 0;
 }

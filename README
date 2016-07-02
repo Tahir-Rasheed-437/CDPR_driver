@@ -1,3 +1,68 @@
-Cable Driven parallel robot.
+# Cable Driven parallel robot.
 
 This package requires VISP
+
+ros_driver is the file that launches the commuinication node with the node uses a class called br_robot, which takes as input
+host ip address.
+
+Br_robot has two threads 
+readData() -> creates a joint states message
+writeData() -> sends a desired position or torque to robot
+
+
+To launch the real robot
+## roslaunch br_driver br_driver.launch robot_ip:=127.0.0.1 port:=50001 (inside scr/br_drivers)
+
+
+
+To launch a simulated "fake" robot
+## roslaunch br_driver br_driver_sim.launch robot_ip:=127.0.0.1 port:=50001 (in workspace)
+
+tf_estim gives the location of the end effector by odmetery in fake robot
+## rosrun br_driver tf_estim (better run this after running rviz) 
+
+
+Runs rviz
+## roslaunch br_driver br_rviz.launch config:=true
+
+Rviz a visualization of the robot
+## rosrun br_driver rviz_visual
+
+
+
+** Changings majors should be in the file controller_class.cpp
+working with the get_trajectory_parameter now
+
+
+** 
+1. Todo make compaitble with different cable numbers
+2. Desired joint position has a joint position and joint torque Add a paramater which selects position control or troque control
+3. Change platform to point, 
+4. A simple dynamic model
+5. Ensure rviz is working correctly
+6. Fix cable visuals
+
+
+To launch a simple demo application
+
+
+Launch driver and simulated robot
+# roslaunch br_driver br_driver_sim.launch robot_ip:=127.0.0.1 port:=50001
+
+Launch robot odemetry based on motor positions
+# rosrun br_driver tf_estim
+
+Launch a simple cartesian controller based on IKM
+# rosrun br_driver tf_with_joint_gui.py
+
+Launch a simple cartesian controller based on IKM
+# rosrun br_driver cartesian_controller
+
+Launch rviz
+# roslaunch br_driver br_rviz.launch config:=true
+
+Launch the visulization of robot based on cartesian states
+# rosrun br_driver rviz_visual
+
+
+

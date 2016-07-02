@@ -438,7 +438,7 @@ std::string BRrobot::pack_joint_message()
 
 
         TiXmlPrinter printer;
-        doc.Print();
+       // doc.Print();
         doc.Accept( &printer );
         message = printer.CStr();
         //std::cout<<"message "<<message<<std::endl;

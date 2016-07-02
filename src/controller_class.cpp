@@ -185,7 +185,23 @@ std::vector<double> controller_class::get_trajectory_parameter(std::string param
     return p;
 }
 
+void controller_class::printVectorDouble(std::vector<double> p,const char* intro)
+{
+    std::cout<<intro<<"=[ ";
+    for (int i = 0; i < p.size(); ++i) {
+        std::cout<<p[i]<<"  ";
+    }
+    std::cout<<std::endl;
+}
 
+void controller_class::printVectorDouble(vpColVector p,const char* intro)
+{
+    std::cout<<intro<<"=[ ";
+    for (int i = 0; i < p.getRows(); ++i) {
+        std::cout<<p[i]<<"  ";
+    }
+    std::cout<<std::endl;
+}
 
 void controller_class::printfM(vpHomogeneousMatrix M,const char* intro)
 {
@@ -594,8 +610,23 @@ void controller_class::calculate_jacobian(vpMatrix& J)
     }
 }
 
+/*
+  This function calculates the reduced jacobian matrix
+  from rows in p
+  for example for six rows should be p=[0,1,2,3,4,5]
 
+*/
+void controller_class::calculate_reduced_jacobian(vpMatrix J,vpMatrix& Jred,std::vector<int> p){
+  // J is an 8 \times 6 matrix
 
+    if(p.size()!=6) Jred.resize(p.size(),6); // by default we assume 6 times 6
+
+    for (int rows = 0; rows < p.size(); ++rows) {
+        for (int cols = 0; cols < 6; ++cols) {
+            Jred[rows][cols]=J[p[rows]][cols];
+        }
+    }
+}
 
 
 /*

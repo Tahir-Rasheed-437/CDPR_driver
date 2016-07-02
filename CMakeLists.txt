@@ -173,6 +173,13 @@ target_link_libraries(ros_driver br_robot ${catkin_LIBRARIES} ${TinyXML_LIBRARIE
 add_executable(tf_estim src/tf_estim.cpp)
 target_link_libraries(tf_estim controller_class ${catkin_LIBRARIES} ${VISP_LIBRARIES} ${TinyXML_LIBRARIES})
 
+set(NODE_NAME
+  tf_estim_reduced
+)
+
+add_executable(${NODE_NAME} src/${NODE_NAME}.cpp)
+target_link_libraries(${NODE_NAME} controller_class ${catkin_LIBRARIES} ${VISP_LIBRARIES} ${TinyXML_LIBRARIES})
+
 add_executable(client_sample src/client_sample.cpp)
 target_link_libraries(client_sample ${catkin_LIBRARIES})
 

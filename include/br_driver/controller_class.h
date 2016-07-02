@@ -72,12 +72,17 @@ public:
     std::vector<double> get_trajectory_parameter(std::string param_name);
 
     void printfM(vpHomogeneousMatrix M, const char *intro="Matrix");
+    void printVectorDouble(std::vector<double> p,const char* intro="vector");
+    void printVectorDouble(vpColVector p,const char* intro);
 
 
     // Kinematic functions
     void calculate_inv_jacobian(vpHomogeneousMatrix wTp,vpMatrix& W);
     void calculate_inv_jacobian(vpMatrix& W);
     void calculate_jacobian(vpMatrix& J);
+
+    // reduce jacobian by excluding rows in p
+    void calculate_reduced_jacobian(vpMatrix J,vpMatrix& Jred,std::vector<int> p);
 
     std::vector<double> calculate_cable_length(vpHomogeneousMatrix wTp);
     std::vector<double> calculate_cable_length();

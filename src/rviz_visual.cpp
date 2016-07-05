@@ -228,15 +228,12 @@ int main(int argc, char **argv) {
     marker_pub.publish(marker34);
     r.sleep();
     ros::spinOnce();
-    ROS_INFO("here");
     marker_pub.publish(marker56);
     r.sleep();
     ros::spinOnce();
-    ROS_INFO("finsihed ");
     marker_pub.publish(marker70);
     r.sleep();
     ros::spinOnce();
-    ROS_INFO("finsihed publishing");
 
 
     pTcentroid.buildFrom(0.164,0.164,0.068,0.0,0.0,0.0);
@@ -251,8 +248,7 @@ int main(int argc, char **argv) {
     line_list.ns="cables";
     line_list.pose.orientation.w =1;
     line_list.id = 2;
-    line_list.lifetime = ros::Duration();
-
+    line_list.lifetime = ros::Duration(0);
 
 
     geometry_msgs::Point p;
@@ -260,23 +256,19 @@ int main(int argc, char **argv) {
     {
         CableRobot.GetEstimatedPlatformTransformation(wTp_estimate);
         wTcentroid=wTp_estimate*pTcentroid;
+        line_list.points.clear();
+
 
         for (int var = 0; var < number_of_cables; ++var) {
             wTbi=wTp_estimate*CableRobot.pTbi[var];
             wTbi.extract(wPbi[var]);
-            p.x=wPai[var][0];
-            p.y=wPai[var][1];
-            p.z=wPai[var][2];
+            p.x=wPai[var][0]; p.y=wPai[var][1]; p.z=wPai[var][2];
             line_list.points.push_back(p);
-            p.x=wPbi[var][0];
-            p.y=wPbi[var][1];
-            p.z=wPbi[var][2];
+            p.x=wPbi[var][0]; p.y=wPbi[var][1]; p.z=wPbi[var][2];
             line_list.points.push_back(p);
         }
         create_platform(wTcentroid,"platform",0,visualization_msgs::Marker::CUBE,
                              marker_plat,0.306,0.354,0.138,0.3f,0.3f,0.3f,1.0,"world");
-
-
 
         marker_pub.publish(marker_plat);
         r.sleep();

@@ -755,6 +755,59 @@ void controller_class::convert_omega_to_quaternion_dot(vpHomogeneousMatrix wTp,d
     quaternion_dot=C*omega;
 
 }
+/*
+
+ This function finds wTp t+1 from wTpt and by integrating a twist
+
+*/
+void controller_class::integrate_twist(vpHomogeneousMatrix& wTp,
+                                   vpColVector V)
+{
+
+    ROS_ASSERT(V.getRows()==6);
+    vpColVector Quaternion_dot(4); // convert
+    vpTranslationVector w_P_p;
+    vpQuaternionVector w_Quaternion_p;
+
+    // convert omega to quaternion dot
+    convert_omega_to_quaternion_dot(wTp,V[3],V[4],V[5],Quaternion_dot);
+    // get current quaternion
+    wTp.extract(w_Quaternion_p);
+    wTp.extract(w_P_p);
+
+    // inetgrate
+    w_Quaternion_p.buildFrom(w_Quaternion_p.x()+Quaternion_dot[1],
+            w_Quaternion_p.y()+Quaternion_dot[2],
+            w_Quaternion_p.z()+Quaternion_dot[3],
+            w_Quaternion_p.w()+Quaternion_dot[0]);
+    w_Quaternion_p.normalize();
+    w_P_p.buildFrom(w_P_p[0]+V[0],
+            w_P_p[1]+V[1],
+            w_P_p[2]+V[2]);
+
+    wTp.buildFrom(w_P_p,w_Quaternion_p);
+}
+
+double controller_class::get_vector_error(vpColVector p,vpColVector p1){
+    ROS_ASSERT(p.getRows()==p1.getRows());
+    double sum;
+       for (int i = 0; i < p.size(); ++i) {
+           sum=sum+pow(p[i]-p1[i],2);
+       }
+    return pow(sum,0.5);
+
+}
+
+double controller_class::get_vector_error(std::vector<double> p,std::vector<double> p1){
+    ROS_ASSERT(p.size()==p1.size());
+    double sum;
+       for (int i = 0; i < p.size(); ++i) {
+           sum=sum+pow(p[i]-p1[i],2);
+       }
+    return pow(sum,0.5);
+
+}
+
 
 /*
 ======================================================================

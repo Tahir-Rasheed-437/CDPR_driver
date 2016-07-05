@@ -71,17 +71,11 @@ int main(int argc, char **argv) {
     std::vector<double> l(number_of_cables);
     std::vector<double> l_init(number_of_cables);
     std::vector<double> l_last(number_of_cables);
-    vpHomogeneousMatrix wTp(trans,quat);
+    vpHomogeneousMatrix wTp(trans,quat),wTp_funct(trans,quat);
     vpHomogeneousMatrix wTp_last(trans,quat);
-    vpHomogeneousMatrix wdiffp;
-    vpMatrix W(6,8); // -inverse transpose of jacobian matrix
-    vpMatrix WT(8,6); // inverse jacobian matrix
     vpMatrix J(6,8); // jacobian matrix
     vpMatrix J_lau(8,6); // jacobian matrix
 
-    vpTranslationVector w_P_p;
-    vpQuaternionVector w_Quaternion_p,w_Quat_p_diff;
-    vpColVector Quaternion_dot(4); // convert
     vpColVector dq(number_of_cables);
     vpColVector dl(number_of_cables);
     vpColVector dl_check(number_of_cables);
@@ -92,95 +86,50 @@ int main(int argc, char **argv) {
     double tol=0.01; // tolerance is in metres
 
     bool debug=true;
+
+    while(!CableRobot.GetJointFlag()){
+        r.sleep();
+    }
+    CableRobot.UpdatePlatformTransformation(wTp);
+    l=CableRobot.calculate_cable_length();
+    l_init=l;
+    l_last=l;
+
+    CableRobot.GetRobotJointState(current_joint_state);
+    initial_joint_state=current_joint_state;
+    last_joint_state=current_joint_state;
+
     while(ros::ok())
     {
 
         ROS_INFO_COND(debug,"Initializing");
         if(CableRobot.GetJointFlag())
         {
-
-            if(InitialStep)
-            {
-                CableRobot.UpdatePlatformTransformation(wTp);
-                l=CableRobot.calculate_cable_length();
-                l_init=l;
-                l_last=l;
-
-                CableRobot.GetRobotJointState(current_joint_state);
-                initial_joint_state=current_joint_state;
-                last_joint_state=current_joint_state;
-
-                InitialStep=false;
-            }
-            else
-            {
-                ROS_INFO_COND(debug,"Updating platform");
-                CableRobot.UpdatePlatformTransformation(wTp);
-                ROS_INFO_COND(debug,"Calculate cable length");
-                l=CableRobot.calculate_cable_length();
-                ROS_INFO_COND(debug,"Calculate joint state SOMETHING WRONG HERE");
-
-                try {
-                    CableRobot.GetRobotJointState(current_joint_state);
-                }
-                catch (const std::bad_alloc&) {
-                    ROS_ERROR("std::bad_alloc");
-                    std::cout<<"size="<<CableRobot.joint.position.size()<<"joint =["<<std::endl;
-                    for (int i = 0; i < number_of_cables; ++i) {
-                        std::cout<<CableRobot.joint.position[i]<<std::endl;
-                        std::cout<<CableRobot.joint.name[i]<<std::endl;
-                    }
-                    std::cout<<"size="<<current_joint_state.position.size()<<"current_joint_position =["<<std::endl;
-
-
-                    for (int i = 0; i < number_of_cables; ++i) {
-                        std::cout<<current_joint_state.position[i]<<std::endl;
-                    }
-                    CableRobot.Stop();
-                    return -1;
-                }
-
-
-
-                // Obtain how much the joint has changed
-                for (int i = 0; i < number_of_cables; ++i) {
-                    dq[i]=current_joint_state.position[i]-last_joint_state.position[i];
-                }
-
-
-                dl=dq*ratio; // converts from rad to m
-
-                if(dl.euclideanNorm()>tol) ROS_FATAL("Norm dl is large %f. Linearization may not be valid",dl.euclideanNorm());
-
-                CableRobot.calculate_jacobian(J_lau);
-
-                dX=(J_lau.pseudoInverse())*dl; // find velocity vx vy vz wx wy wz
-
-                CableRobot.convert_omega_to_quaternion_dot(wTp,dX[3],dX[4],dX[5],Quaternion_dot);
-
-                wTp.extract(w_Quaternion_p);
-                wTp.extract(w_P_p);
-                w_Quaternion_p.buildFrom(w_Quaternion_p.x()+Quaternion_dot[1],
-                        w_Quaternion_p.y()+Quaternion_dot[2],
-                        w_Quaternion_p.z()+Quaternion_dot[3],
-                        w_Quaternion_p.w()+Quaternion_dot[0]);
-                w_Quaternion_p.normalize();
-
-                w_P_p.buildFrom(w_P_p[0]+dX[0],
-                        w_P_p[1]+dX[1],
-                        w_P_p[2]+dX[2]);
-
-                wTp.buildFrom(w_P_p,w_Quaternion_p);
-                CableRobot.UpdatePlatformTransformation(wTp);
-
-                CableRobot.printfM(wTp,"wTp= ");
-
-                wTp_last=wTp;
-                last_joint_state=current_joint_state; // update last position
-                l_last=l;
-                ROS_INFO("==================================================");
-            }
-
+            ROS_INFO_COND(debug,"Updating platform");
+            CableRobot.UpdatePlatformTransformation(wTp);
+            ROS_INFO_COND(debug,"Calculate cable length");
+            l=CableRobot.calculate_cable_length();
+            ROS_INFO_COND(debug,"Calculate joint state");
+            CableRobot.GetRobotJointState(current_joint_state);
+            ROS_INFO_COND(debug,"Calculate delta q");
+            // Obtain how much the joint has changed
+            for (int i = 0; i < number_of_cables; ++i)
+                dq[i]=current_joint_state.position[i]-last_joint_state.position[i];
+            ROS_INFO_COND(debug,"Calculate delta l");
+            dl=dq*ratio; // converts from rad to m
+            if(dl.euclideanNorm()>tol)
+                ROS_FATAL("Norm dl is large %f. Linearization may not be valid",
+                          dl.euclideanNorm());
+            ROS_INFO_COND(debug,"Calculate Jacobian");
+            CableRobot.calculate_jacobian(J_lau);
+            ROS_INFO_COND(debug,"Calculate Velocity");
+            dX=(J_lau.pseudoInverse())*dl;
+            ROS_INFO_COND(debug,"Integrate Velocity");
+            CableRobot.integrate_twist(wTp,dX);
+            wTp_last=wTp;
+            last_joint_state=current_joint_state; // update last position
+            l_last=l;
+            ROS_INFO("==================================================");
         }
 
 

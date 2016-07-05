@@ -61,8 +61,6 @@ Launch a simple cartesian controller based on IKM
 Launch rviz
 # roslaunch br_driver br_rviz.launch config:=true
 
-Launch the visulization of robot based on cartesian states
-# rosrun br_driver rviz_visual
 
 
 

@@ -13,7 +13,7 @@
   </node>
 
 
-  <node name="rviz_visual" type="rviz_visual" pkg="br_driver" respawn="true"
+  <node name="rviz_visual" type="rviz_visual" pkg="br_driver" respawn="false"
         output="screen">
   </node>
 

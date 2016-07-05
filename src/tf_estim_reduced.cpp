@@ -19,6 +19,40 @@
 // Node which completes the odmetry it assumes that robot is functioning perfectly and
 // all constraints have been respected.
 
+// The recursive method to obtain all combinations
+// given by http://ideone.com/78jkV
+
+#define SET_SIZE 8
+
+int set[] = {0,1,2,3,4,5,6,7};
+std::vector<std::vector<int> > all_combinations;
+const int tuple_size = 6;
+
+void recursive_comb(int step_val, int array_index, std::vector<int> tuple)
+{
+    if (step_val == 0)
+    {
+        all_combinations.push_back(tuple); //<==We have the final combination
+        return;
+    }
+
+    for (int i = array_index; i < SET_SIZE; i++)
+    {
+        tuple.push_back(set[i]);
+        recursive_comb(step_val - 1, i + 1, tuple);
+        tuple.pop_back();
+    }
+
+    return;
+}
+
+void init_combinations()
+{
+    std::vector<int> tuple;
+    tuple.reserve(tuple_size); //avoids needless allocations
+    recursive_comb(tuple_size, 0, tuple);
+}
+
 
 int main(int argc, char **argv) {
 
@@ -29,6 +63,18 @@ int main(int argc, char **argv) {
     ros::Rate r(100);
     int number_of_cables;
     double ratio;//=0.00034906585039886593;
+
+    init_combinations(); // Generate all combinations
+//    for (int i=0; i < all_combinations.size(); i++)
+//    {
+//        std::cout << "{";
+//        for (int j=0; j < tuple_size; j++)
+//        {
+//            std::cout << all_combinations[i][j] << " ";
+//        }
+//        std::cout << "}" << std::endl;
+//    }
+
     nh.getParam("number_of_cables",number_of_cables);
     nh.getParam("drum_radius",ratio);
     std::string frame_name="estimated_platform_frame";
@@ -74,12 +120,13 @@ int main(int argc, char **argv) {
     vpColVector Quaternion_dot(4); // convert
     vpColVector dq(number_of_cables);
     vpColVector dl(number_of_cables);
+    double error_integration;
     vpColVector dl_check(number_of_cables);
     vpColVector dX(6);
 
     CableRobot.UpdatePlatformTransformation(wTp);
     bool InitialStep=true;
-    double tol=0.01; // tolerance is in metres
+    double tol=0.02; // tolerance is in metres
 
     bool debug=true;
 
@@ -97,76 +144,71 @@ int main(int argc, char **argv) {
     initial_joint_state=current_joint_state;
     last_joint_state=current_joint_state;
 
+
     while(ros::ok())
     {
         ROS_INFO_COND(debug,"Updating platform");
         CableRobot.UpdatePlatformTransformation(wTp);
         ROS_INFO_COND(debug,"Calculate cable length");
         l=CableRobot.calculate_cable_length();
-
-
-
-
         ROS_INFO_COND(debug,"Calculate joint state");
         CableRobot.GetRobotJointState(current_joint_state);
-        // Obtain how much the joint has changed
         ROS_INFO_COND(debug,"Calculate delta q");
         for (int i = 0; i < number_of_cables; ++i)
             dq[i]=current_joint_state.position[i]-last_joint_state.position[i];
+        if(dq.euclideanNorm()>0.0001)
+        {
+
+        ROS_INFO_COND(debug,"Change detected");
         ROS_INFO_COND(debug,"Calculate delta l");
         dl=dq*ratio; // converts from rad to m
+        dl_check=dq*ratio;
+        CableRobot.printVectorDouble(dl_check,"dl= ");
         if(dl.euclideanNorm()>tol)
+        {
             ROS_FATAL("Norm dl is large %f. Linearization may not be valid",
                       dl.euclideanNorm());
+            return -1;
+        }
         ROS_INFO_COND(debug,"Calculate Jacobian");
         CableRobot.calculate_jacobian(J_lau);
 
-        // Find all reduced jacobian matrices
-          // -------------------- start of for loops ---------------------//
-        CableRobot.calculate_reduced_jacobian(J_lau,J_red,red_rows);
+        // -------------------- start of for loops ---------------------//
+        for (int i = 0; i < all_combinations.size(); ++i) {
+            red_rows=all_combinations[i];
+            CableRobot.calculate_reduced_jacobian(J_lau,J_red,red_rows);
+            J_red.print(std::cout,6,"J_red");
+        }
 
+        J_lau.print(std::cout,6,"J_lau");
         ROS_INFO_COND(debug,"Calculate Dx");
-        dX=(J_red.inverseByQR())*dl; // find velocity vx vy vz wx wy wz
+        dX=(J_lau.pseudoInverse())*dl; // find velocity vx vy vz wx wy wz
 
         ROS_INFO_COND(debug,"Integrate Velocity");
-        CableRobot.convert_omega_to_quaternion_dot(
-                    wTp,dX[3],dX[4],dX[5],Quaternion_dot);
-
-        wTp.extract(w_Quaternion_p);
-        wTp.extract(w_P_p);
-
-        w_Quaternion_p.buildFrom(w_Quaternion_p.x()+Quaternion_dot[1],
-                w_Quaternion_p.y()+Quaternion_dot[2],
-                w_Quaternion_p.z()+Quaternion_dot[3],
-                w_Quaternion_p.w()+Quaternion_dot[0]);
-
-        w_Quaternion_p.normalize();
-
-        w_P_p.buildFrom(w_P_p[0]+dX[0],
-                w_P_p[1]+dX[1],
-                w_P_p[2]+dX[2]);
-
-        wTp.buildFrom(w_P_p,w_Quaternion_p);
-
+        CableRobot.integrate_twist(wTp,dX);
         CableRobot.printfM(wTp,"wTp by integration= ");
-
         wTp_last=wTp;
         l_test=CableRobot.calculate_cable_length(wTp);
         for (int i = 0; i < number_of_cables; ++i)
+        {
             dl[i]=l_test[i]-l[i];
-        CableRobot.printVectorDouble(dl,"dl by integration");
+        }
 
+        error_integration=CableRobot.get_vector_error(dl,dl_check);
+        CableRobot.printVectorDouble(dl,"dl by integration");
+        ROS_INFO("Integration Error %f",error_integration);
         // -------------------- End of for loops ---------------------//
 
 
         last_joint_state=current_joint_state; // update last position
         l_last=l;
-        ROS_INFO("==================================================");
+        ROS_INFO_COND(debug,"==================================================");
+        }
         r.sleep();
 
     }
-CableRobot.Stop();
-return 0;
+    CableRobot.Stop();
+    return 0;
 }
 
 

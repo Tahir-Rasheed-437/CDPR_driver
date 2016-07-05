@@ -74,7 +74,8 @@ public:
     void printfM(vpHomogeneousMatrix M, const char *intro="Matrix");
     void printVectorDouble(std::vector<double> p,const char* intro="vector");
     void printVectorDouble(vpColVector p,const char* intro);
-
+    double get_vector_error(vpColVector p,vpColVector p1);
+    double get_vector_error(std::vector<double> p,std::vector<double> p1);
 
     // Kinematic functions
     void calculate_inv_jacobian(vpHomogeneousMatrix wTp,vpMatrix& W);
@@ -114,6 +115,10 @@ public:
                                          double omega_y,
                                          double omega_z,
                                          vpColVector& quaternion_dot);
+
+    void integrate_twist(vpHomogeneousMatrix& wTp,
+                                       vpColVector V);
+
 
     void GetPlatformTransformation(vpHomogeneousMatrix& M);
     void GetEstimatedPlatformTransformation(vpHomogeneousMatrix& M);

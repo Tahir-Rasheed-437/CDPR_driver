@@ -40,6 +40,7 @@ working with the get_trajectory_parameter now
 3. Change platform to point, 
 4. A simple dynamic model
 5. Ensure rviz is working correctly
+6. Fix cable visuals
 
 
 To launch a simple demo application
@@ -60,8 +61,6 @@ Launch a simple cartesian controller based on IKM
 Launch rviz
 # roslaunch br_driver br_rviz.launch config:=true
 
-Launch the visulization of robot based on cartesian states
-# rosrun br_driver rviz_visual
 
 
 

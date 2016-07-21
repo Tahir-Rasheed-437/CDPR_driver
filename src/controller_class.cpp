@@ -191,7 +191,7 @@ void controller_class::printVectorDouble(std::vector<double> p,const char* intro
     for (int i = 0; i < p.size(); ++i) {
         std::cout<<p[i]<<"  ";
     }
-    std::cout<<std::endl;
+    std::cout<<"]"<<std::endl;
 }
 
 void controller_class::printVectorDouble(vpColVector p,const char* intro)
@@ -200,12 +200,13 @@ void controller_class::printVectorDouble(vpColVector p,const char* intro)
     for (int i = 0; i < p.getRows(); ++i) {
         std::cout<<p[i]<<"  ";
     }
-    std::cout<<std::endl;
+    std::cout<<"]"<<std::endl;
 }
 
 void controller_class::printfM(vpHomogeneousMatrix M,const char* intro)
 {
     printf(intro,"\n");
+    printf("\n");
     printf("%8.3f %8.3f %8.3f %8.8f\n", M[0][0], M[0][1], M[0][2], M[0][3]);
     printf("%8.3f %8.3f %8.3f %8.8f\n", M[1][0], M[1][1], M[1][2], M[1][3]);
     printf("%8.3f %8.3f %8.3f %8.8f\n", M[2][0], M[2][1], M[2][2], M[2][3]);

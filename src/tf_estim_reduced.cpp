@@ -60,20 +60,20 @@ int main(int argc, char **argv) {
     ros::NodeHandle nh;
     ros::AsyncSpinner spinner(1);
     spinner.start();
-    ros::Rate r(100);
+    ros::Rate r(50);
     int number_of_cables;
     double ratio;//=0.00034906585039886593;
 
     init_combinations(); // Generate all combinations
-//    for (int i=0; i < all_combinations.size(); i++)
-//    {
-//        std::cout << "{";
-//        for (int j=0; j < tuple_size; j++)
-//        {
-//            std::cout << all_combinations[i][j] << " ";
-//        }
-//        std::cout << "}" << std::endl;
-//    }
+    //    for (int i=0; i < all_combinations.size(); i++)
+    //    {
+    //        std::cout << "{";
+    //        for (int j=0; j < tuple_size; j++)
+    //        {
+    //            std::cout << all_combinations[i][j] << " ";
+    //        }
+    //        std::cout << "}" << std::endl;
+    //    }
 
     nh.getParam("number_of_cables",number_of_cables);
     nh.getParam("drum_radius",ratio);
@@ -115,13 +115,11 @@ int main(int argc, char **argv) {
     vpMatrix J_lau(8,6); // jacobian matrix
     vpMatrix J_red(6,6); // jacobian matrix
     std::vector<int> red_rows(6);
-    vpTranslationVector w_P_p;
-    vpQuaternionVector w_Quaternion_p,w_Quat_p_diff;
-    vpColVector Quaternion_dot(4); // convert
     vpColVector dq(number_of_cables);
     vpColVector dl(number_of_cables);
     double error_integration;
     vpColVector dl_check(number_of_cables);
+    vpColVector dl_red(6);
     vpColVector dX(6);
 
     CableRobot.UpdatePlatformTransformation(wTp);
@@ -147,6 +145,7 @@ int main(int argc, char **argv) {
 
     while(ros::ok())
     {
+        std::setprecision(7);
         ROS_INFO_COND(debug,"Updating platform");
         CableRobot.UpdatePlatformTransformation(wTp);
         ROS_INFO_COND(debug,"Calculate cable length");
@@ -156,53 +155,74 @@ int main(int argc, char **argv) {
         ROS_INFO_COND(debug,"Calculate delta q");
         for (int i = 0; i < number_of_cables; ++i)
             dq[i]=current_joint_state.position[i]-last_joint_state.position[i];
-        if(dq.euclideanNorm()>0.0001)
+
+        if(dq.euclideanNorm()>0.00001)
         {
 
-        ROS_INFO_COND(debug,"Change detected");
-        ROS_INFO_COND(debug,"Calculate delta l");
-        dl=dq*ratio; // converts from rad to m
-        dl_check=dq*ratio;
-        CableRobot.printVectorDouble(dl_check,"dl= ");
-        if(dl.euclideanNorm()>tol)
-        {
-            ROS_FATAL("Norm dl is large %f. Linearization may not be valid",
-                      dl.euclideanNorm());
-            return -1;
-        }
-        ROS_INFO_COND(debug,"Calculate Jacobian");
-        CableRobot.calculate_jacobian(J_lau);
+            ROS_INFO_COND(debug,"Change detected");
+            CableRobot.printVectorDouble(dq,"dq=");
+            ROS_INFO_COND(debug,"Calculate delta l");
+            dl=dq*ratio; // converts from rad to m
+            dl_check=dq*ratio;
+            CableRobot.printVectorDouble(dl_check,"dl= ");
+            if(dl.euclideanNorm()>tol)
+            {
+                ROS_FATAL("Norm dl is large %f. Linearization may not be valid",
+                          dl.euclideanNorm());
+                return -1;
+            }
+            ROS_INFO_COND(debug,"Calculate Jacobian");
+            CableRobot.calculate_jacobian(J_lau);
 
-        // -------------------- start of for loops ---------------------//
-        for (int i = 0; i < all_combinations.size(); ++i) {
-            red_rows=all_combinations[i];
-            CableRobot.calculate_reduced_jacobian(J_lau,J_red,red_rows);
-            J_red.print(std::cout,6,"J_red");
-        }
+             dX=(J_lau.pseudoInverse())*dl; // find velocity vx vy vz wx wy wz
+            CableRobot.printVectorDouble(dX,"Dx by 6x8 jacobian=");
 
-        J_lau.print(std::cout,6,"J_lau");
-        ROS_INFO_COND(debug,"Calculate Dx");
-        dX=(J_lau.pseudoInverse())*dl; // find velocity vx vy vz wx wy wz
+            error_integration=100.0;
+            // -------------------- start of for loops ---------------------//
+            for (int i = 0; i < all_combinations.size(); ++i) {
+                red_rows=all_combinations[i];
 
-        ROS_INFO_COND(debug,"Integrate Velocity");
-        CableRobot.integrate_twist(wTp,dX);
-        CableRobot.printfM(wTp,"wTp by integration= ");
-        wTp_last=wTp;
-        l_test=CableRobot.calculate_cable_length(wTp);
-        for (int i = 0; i < number_of_cables; ++i)
-        {
-            dl[i]=l_test[i]-l[i];
-        }
+                CableRobot.calculate_reduced_jacobian(J_lau,J_red,red_rows);
+              //  J_red.print(std::cout,6,"J_red");
 
-        error_integration=CableRobot.get_vector_error(dl,dl_check);
-        CableRobot.printVectorDouble(dl,"dl by integration");
-        ROS_INFO("Integration Error %f",error_integration);
-        // -------------------- End of for loops ---------------------//
+                // Calculated dl reduced
+                for (int var = 0; var < 6; ++var) {
+                    dl_red[var]=dl[red_rows[var]];
+                }
 
+                CableRobot.printVectorDouble(dl_red,"dl_reduced= ");
+             //   J_lau.print(std::cout,6,"J_lau");
+              //  ROS_INFO_COND(debug,"Calculate Dx actual");
+                dX=(J_red.inverseByQR())*dl_red; // find velocity vx vy vz wx wy wz
 
-        last_joint_state=current_joint_state; // update last position
-        l_last=l;
-        ROS_INFO_COND(debug,"==================================================");
+                CableRobot.integrate_twist(wTp,dX);
+               // CableRobot.printfM(wTp,"wTp by integration= ");
+                wTp_last=wTp;
+                l_test=CableRobot.calculate_cable_length(wTp);
+                for (int i = 0; i < number_of_cables; ++i)
+                {
+                    dl_check[i]=l_test[i]-l[i];
+                }
+                CableRobot.printVectorDouble(dl_check,"Dl by integration= ");
+
+                CableRobot.printVectorDouble(dX,"Dx=");
+              //  ROS_INFO_COND(debug,"Integrate Velocity");
+
+                error_integration=CableRobot.get_vector_error(dl,dl_check);
+               // CableRobot.printVectorDouble(dl,"dl by integration");
+
+                if(error_integration<CableRobot.get_vector_error(dl,dl_check))
+                {
+                    error_integration=CableRobot.get_vector_error(dl,dl_check);
+                }
+                // -------------------- End of for loops ---------------------//
+
+            }
+            ROS_INFO("Min integration error %f",error_integration);
+
+            last_joint_state=current_joint_state; // update last position
+            l_last=l;
+            ROS_INFO_COND(debug,"==================================================");
         }
         r.sleep();
 

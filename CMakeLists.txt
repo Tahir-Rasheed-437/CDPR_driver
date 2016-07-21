@@ -180,6 +180,12 @@ set(NODE_NAME
 add_executable(${NODE_NAME} src/${NODE_NAME}.cpp)
 target_link_libraries(${NODE_NAME} controller_class ${catkin_LIBRARIES} ${VISP_LIBRARIES} ${TinyXML_LIBRARIES})
 
+set(NODE_NAME
+  integration_tests
+)
+add_executable(${NODE_NAME} src/${NODE_NAME}.cpp)
+target_link_libraries(${NODE_NAME} controller_class ${catkin_LIBRARIES} ${VISP_LIBRARIES} ${TinyXML_LIBRARIES})
+
 add_executable(client_sample src/client_sample.cpp)
 target_link_libraries(client_sample ${catkin_LIBRARIES})
 
